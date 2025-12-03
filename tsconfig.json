@@ -28,6 +28,7 @@
     "views/**/*.ts",
     "views/**/*.js",
     "rsn/**/*.ts",
+    "types/**/*.d.ts",
     "*.ts"
   ],
   "exclude": [
@@ -36,7 +37,6 @@
     "dist",
     "build",
     "vagrant",
-    "data/static/codefixes/**",
-    "**/*.d.ts"
+    "data/static/codefixes/**"
   ]
 }

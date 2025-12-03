@@ -44,7 +44,6 @@ const yaml = require("js-yaml");
 const swaggerUi = require("swagger-ui-express");
 const RateLimit = require("express-rate-limit");
 const client = require("prom-client");
-const ipfilter = require("express-ipfilter").IpFilter;
 const swaggerDocument = yaml.load(fs.readFileSync("./swagger.yml", "utf8"));
 const {
   ensureFileIsPassed,
@@ -95,6 +94,7 @@ const security = require("./lib/insecurity");
 const datacreator = require("./data/datacreator");
 const app = express();
 const server = require("http").Server(app);
+const quantityIpGuard = createIpAllowListMiddleware(["123.456.789"]);
 const appConfiguration = require("./routes/appConfiguration");
 const captcha = require("./routes/captcha");
 const trackOrder = require("./routes/trackOrder");
@@ -126,6 +126,23 @@ const startupGauge = new client.Gauge({
   help: `Duration ${appName} required to perform a certain task during startup`,
   labelNames: ["task"],
 });
+
+function createIpAllowListMiddleware(allowList: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const remoteIp = normalizeIp(req.ip ?? req.socket.remoteAddress ?? "");
+    if (allowList.includes(remoteIp)) {
+      next();
+      return;
+    }
+    const error = new Error("Access denied from IP address");
+    (error as any).status = 403;
+    next(error);
+  };
+}
+
+function normalizeIp(ip: string): string {
+  return ip.replace(/^::ffff:/, "");
+}
 
 // Wraps the function and measures its (async) execution time
 const collectDurationPromise = (name: string, func: any) => {
@@ -500,11 +517,7 @@ restoreOverwrittenFilesWithOriginals()
     /* Accounting users are allowed to check and update quantities */
     app.delete("/api/Quantitys/:id", security.denyAll());
     app.post("/api/Quantitys", security.denyAll());
-    app.use(
-      "/api/Quantitys/:id",
-      security.isAccounting(),
-      ipfilter(["123.456.789"], { mode: "allow" })
-    );
+    app.use("/api/Quantitys/:id", security.isAccounting(), quantityIpGuard);
     /* Feedbacks: Do not allow changes of existing feedback */
     app.put("/api/Feedbacks/:id", security.denyAll());
     /* PrivacyRequests: Only allowed for authenticated users */

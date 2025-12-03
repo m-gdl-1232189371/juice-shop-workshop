@@ -6,14 +6,17 @@
 import fs = require("fs");
 import { type Request, type Response, type NextFunction } from "express";
 import logger from "../lib/logger";
+import { pipeline } from "stream/promises";
+import { request as undiciRequest } from "undici";
 
 import { UserModel } from "../models/user";
 import * as utils from "../lib/utils";
 const security = require("../lib/insecurity");
-const request = require("request");
+
+const allowedExtensions = ["jpg", "jpeg", "png", "svg", "gif"] as const;
 
 module.exports = function profileImageUrlUpload() {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     if (
       req.body.imageUrl !== undefined &&
       typeof req.body.imageUrl === "string"
@@ -23,52 +26,16 @@ module.exports = function profileImageUrlUpload() {
         req.app.locals.abused_ssrf_bug = true;
       const loggedInUser = security.authenticatedUsers.get(req.cookies.token);
       if (loggedInUser) {
-        const imageRequest = request
-          .get(url)
-          .on("error", function (err: unknown) {
-            UserModel.findByPk(loggedInUser.data.id)
-              .then(async (user: UserModel | null) => {
-                return await user?.update({ profileImage: url });
-              })
-              .catch((error: Error) => {
-                next(error);
-              });
-            logger.warn(
-              `Error retrieving user profile image: ${utils.getErrorMessage(
-                err
-              )}; using image link directly`
-            );
-          })
-          .on("response", function (res: Response) {
-            if (res.statusCode === 200) {
-              const ext = ["jpg", "jpeg", "png", "svg", "gif"].includes(
-                url.split(".").slice(-1)[0].toLowerCase()
-              )
-                ? url.split(".").slice(-1)[0].toLowerCase()
-                : "jpg";
-              imageRequest.pipe(
-                fs.createWriteStream(
-                  `frontend/dist/frontend/assets/public/images/uploads/${loggedInUser.data.id}.${ext}`
-                )
-              );
-              UserModel.findByPk(loggedInUser.data.id)
-                .then(async (user: UserModel | null) => {
-                  return await user?.update({
-                    profileImage: `/assets/public/images/uploads/${loggedInUser.data.id}.${ext}`,
-                  });
-                })
-                .catch((error: Error) => {
-                  next(error);
-                });
-            } else
-              UserModel.findByPk(loggedInUser.data.id)
-                .then(async (user: UserModel | null) => {
-                  return await user?.update({ profileImage: url });
-                })
-                .catch((error: Error) => {
-                  next(error);
-                });
-          });
+        try {
+          await handleProfileImageDownload(url, loggedInUser.data.id, next);
+        } catch (err) {
+          logger.warn(
+            `Error retrieving user profile image: ${utils.getErrorMessage(
+              err
+            )}; using image link directly`
+          );
+          await updateProfileImage(loggedInUser.data.id, url, next);
+        }
       } else {
         next(
           new Error("Blocked illegal activity by " + req.socket.remoteAddress)
@@ -79,3 +46,46 @@ module.exports = function profileImageUrlUpload() {
     res.redirect(process.env.BASE_PATH + "/profile");
   };
 };
+
+async function handleProfileImageDownload(
+  url: string,
+  userId: number,
+  next: NextFunction
+): Promise<void> {
+  const { statusCode, body } = await undiciRequest(url, {
+    method: "GET",
+    maxRedirections: 3,
+  });
+
+  if (statusCode !== 200 || body == null) {
+    await updateProfileImage(userId, url, next);
+    return;
+  }
+
+  const extension = deriveExtension(url);
+  const relativePath = `/assets/public/images/uploads/${userId}.${extension}`;
+  const absolutePath = `frontend/dist/frontend${relativePath}`;
+
+  await pipeline(body, fs.createWriteStream(absolutePath));
+  await updateProfileImage(userId, relativePath, next);
+}
+
+async function updateProfileImage(
+  userId: number,
+  value: string,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const user = await UserModel.findByPk(userId);
+    await user?.update({ profileImage: value });
+  } catch (error) {
+    next(error as Error);
+  }
+}
+
+function deriveExtension(url: string): string {
+  const ext = url.split(".").slice(-1)[0]?.toLowerCase();
+  return allowedExtensions.includes(ext as (typeof allowedExtensions)[number])
+    ? ext
+    : "jpg";
+}
