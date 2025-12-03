@@ -3,22 +3,24 @@
  * SPDX-License-Identifier: MIT
  */
 
-import glob = require('glob')
-import logger from '../logger'
-import path from 'path'
-import * as utils from '../utils'
-const fs = require('fs-extra')
+import glob = require("glob");
+import logger from "../logger";
+import path from "path";
+import * as utils from "../utils";
+const fs = require("fs-extra");
 
 const cleanupFtpFolder = () => {
-  (glob as any)(path.resolve('ftp/*.pdf'), (err: unknown, files: string[]) => {
+  (glob as any)(path.resolve("ftp/*.pdf"), (err: unknown, files: string[]) => {
     if (err != null) {
-      logger.warn('Error listing PDF files in /ftp folder: ' + utils.getErrorMessage(err))
+      logger.warn(
+        "Error listing PDF files in /ftp folder: " + utils.getErrorMessage(err)
+      );
     } else {
       files.forEach((filename: string) => {
-        fs.remove(filename)
-      })
+        fs.remove(filename);
+      });
     }
-  })
-}
+  });
+};
 
-module.exports = cleanupFtpFolder
+module.exports = cleanupFtpFolder;

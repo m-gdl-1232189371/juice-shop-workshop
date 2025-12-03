@@ -263,6 +263,10 @@
     "arm"
   ],
   "heroku-run-build-script": true,
+  "overrides": {
+    "validator": "13.15.23",
+    "@messageformat/runtime": "3.0.2"
+  },
   "standard": {
     "global": [
       "angular",
