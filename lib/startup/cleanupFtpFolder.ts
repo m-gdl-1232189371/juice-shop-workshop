@@ -10,7 +10,7 @@ import * as utils from '../utils'
 const fs = require('fs-extra')
 
 const cleanupFtpFolder = () => {
-  glob(path.resolve('ftp/*.pdf'), (err: unknown, files: string[]) => {
+  (glob as any)(path.resolve('ftp/*.pdf'), (err: unknown, files: string[]) => {
     if (err != null) {
       logger.warn('Error listing PDF files in /ftp folder: ' + utils.getErrorMessage(err))
     } else {
